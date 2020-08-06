@@ -7,7 +7,7 @@
 
 
 #ifndef NDEBUG
-#define ENABLE_VALIDATION_LAYERS
+#define VALIDATION_LAYERS_ENABLED
 #endif
 
 

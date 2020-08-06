@@ -2,7 +2,11 @@
 
 #include "GLFW/glfw3.h"
 
+#include "particle.h"
+
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 
 
 
@@ -27,17 +31,18 @@ namespace Vulkan {
         GLFWwindow* _window;
         VkInstance _instance;
         VkDebugUtilsMessengerEXT _debugMessenger;
-
         VkSurfaceKHR _surface;
 
         VkPhysicalDevice _physicalDevice;
-
         VkDevice _device;
         VkQueue _queue;
         VkPresentModeKHR _presentMode;
         VkSurfaceFormatKHR _surfaceFormat;
+        VkExtent2D _extent;
 
         VkRenderPass _renderPass;
+        VkPipelineLayout _pipelineLayout;
+        VkPipeline _graphicsPipeline;
 
         VkSwapchainKHR _swapchain;
         std::vector<VkImage> _swapchainImages;
@@ -52,13 +57,16 @@ namespace Vulkan {
         PhysicalDeviceRating _ratePhysicalDevice(const VkPhysicalDevice physicalDevice);
         int _rateDeviceExtensions(const VkPhysicalDevice physicalDevice);
         int _rateDeviceQueueFamilies(const VkPhysicalDevice physicalDevice, uint32_t& queueFamilyIndex);
-        int _rateDevicePresentMode(const VkPhysicalDevice physicalDevice, VkPresentModeKHR &presentMode);
-        int _rateDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, VkSurfaceFormatKHR &surfaceFormat);
+        int _rateDevicePresentMode(const VkPhysicalDevice physicalDevice, VkPresentModeKHR& presentMode);
+        int _rateDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, VkSurfaceFormatKHR& surfaceFormat);
         int _rateDeviceProperties(const VkPhysicalDevice physicalDevice);
 
         void _createRenderPass();
+        void _createGraphicsPipeline();
+        VkShaderModule _createShaderModule(const std::string& fileName);
 
-        void _createFrameBuffers();
+        void _createFramebuffers();
+
 
         static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -89,9 +97,9 @@ namespace Vulkan {
         _createSurface();
         _createDevice();
         _createRenderPass();
-        _createFrameBuffers();
+        _createFramebuffers();
+        _createGraphicsPipeline();
         //createDescriptorSetLayout();
-        //createGraphicsPipeline();
         //createCommandPool();
         //createVertexBuffer();
         //createIndexBuffer();
@@ -114,13 +122,15 @@ namespace Vulkan {
         }
         vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 
+        vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
+        vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
         vkDestroyRenderPass(_device, _renderPass, nullptr);
 
         vkDestroyDevice(_device, nullptr);
 
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifdef VALIDATION_LAYERS_ENABLED
         auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(_instance, "vkDestroyDebugUtilsMessengerEXT");
         if (func != nullptr) {
             func(_instance, _debugMessenger, nullptr);
@@ -168,7 +178,7 @@ namespace Vulkan {
             std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 
             void* pNext = nullptr;
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifdef VALIDATION_LAYERS_ENABLED
             uint32_t layerCount;
             vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
             std::vector<VkLayerProperties> availableLayers(layerCount);
@@ -213,7 +223,7 @@ namespace Vulkan {
                 throw std::runtime_error("Error: failed to create vulkan instance.");
             }
 
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifdef VALIDATION_LAYERS_ENABLED
             auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(_instance, "vkCreateDebugUtilsMessengerEXT");
             if (func == nullptr || func(_instance, &_debugMessengerCreateInfo, nullptr, &_debugMessenger) != VK_SUCCESS) {
                 throw std::runtime_error("Error: could not retrieve Vulkan debug messenger thing.");
@@ -245,7 +255,7 @@ namespace Vulkan {
             int highestRating = -1;
             int bestPhysicalDeviceIndex = -1;
             std::vector<PhysicalDeviceRating> ratings(physicalDeviceCount);
-            for (int i = 0; i < physicalDeviceCount; i++) {
+            for (uint32_t i = 0; i < physicalDeviceCount; i++) {
                 ratings[i] = _ratePhysicalDevice(physicalDevices[i]);
                 if (ratings[i].rating > highestRating) {
                     highestRating = ratings[i].rating;
@@ -524,21 +534,20 @@ namespace Vulkan {
 
 
 
-        void _createFrameBuffers() {
+        void _createFramebuffers() {
 
             VkSurfaceCapabilitiesKHR capabilities;
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_physicalDevice, _surface, &capabilities);
 
-            VkExtent2D extent;
             if (capabilities.currentExtent.width != UINT32_MAX) {
-                extent = capabilities.currentExtent;
+                _extent = capabilities.currentExtent;
             } else {
                 int width, height;
                 glfwGetFramebufferSize(_window, &width, &height);
-                extent.width = width > capabilities.minImageExtent.width ? width : capabilities.minImageExtent.width;
-                extent.width = extent.width < capabilities.maxImageExtent.width ? extent.width : capabilities.maxImageExtent.width;
-                extent.height = height > capabilities.minImageExtent.height ? height : capabilities.minImageExtent.height;
-                extent.height = extent.height < capabilities.maxImageExtent.height ? extent.height : capabilities.maxImageExtent.height;
+                _extent.width = width > capabilities.minImageExtent.width ? width : capabilities.minImageExtent.width;
+                _extent.width = _extent.width < capabilities.maxImageExtent.width ? _extent.width : capabilities.maxImageExtent.width;
+                _extent.height = height > capabilities.minImageExtent.height ? height : capabilities.minImageExtent.height;
+                _extent.height = _extent.height < capabilities.maxImageExtent.height ? _extent.height : capabilities.maxImageExtent.height;
             }
 
             uint32_t imageCount = 3;
@@ -552,14 +561,14 @@ namespace Vulkan {
             }
 
             VkSwapchainCreateInfoKHR swapchainCreateInfo{
-                VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, //sTypeVk
+                VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, //sType
                 nullptr, //pNext
                 0, //flags
                 _surface, //surface
                 imageCount, //minImageCount
                 _surfaceFormat.format, //imageFormat
                 _surfaceFormat.colorSpace, //imageColorSpace
-                extent, //imageExtent
+                _extent, //imageExtent
                 1, //imageArrayLayers
                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, //imageUsage
                 VK_SHARING_MODE_EXCLUSIVE, //imageSharingMode
@@ -572,7 +581,7 @@ namespace Vulkan {
                 VK_NULL_HANDLE //oldSwapchain
             };
             if (vkCreateSwapchainKHR(_device, &swapchainCreateInfo, nullptr, &_swapchain) != VK_SUCCESS) {
-                throw std::runtime_error("Error: could not create swapchain.");
+                throw std::runtime_error("Error: failed to create swapchain.");
             }
 
             vkGetSwapchainImagesKHR(_device, _swapchain, &imageCount, nullptr);
@@ -616,8 +625,8 @@ namespace Vulkan {
                 _renderPass, //renderPass
                 1, //attachmentCount
                 nullptr, //pAttachments
-                extent.width, //width
-                extent.height, //height
+                _extent.width, //width
+                _extent.height, //height
                 1 //layers
             };
             for (size_t i = 0; i < imageCount; i++) {
@@ -626,6 +635,211 @@ namespace Vulkan {
                     throw std::runtime_error("Error: failed to create framebuffer.");
                 }
             }
+
+        }
+
+
+
+        void _createGraphicsPipeline() {
+            
+            VkShaderModule vertexShaderModule = _createShaderModule("..\\shaders\\vert.spv");
+            VkShaderModule fragmentShaderModule = _createShaderModule("..\\shaders\\frag.spv");
+            VkPipelineShaderStageCreateInfo shaderStageCreateInfos[]{
+                {
+                    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //sType
+                    nullptr, //pNext
+                    0, //flags
+                    VK_SHADER_STAGE_VERTEX_BIT, //stage
+                    vertexShaderModule, //module
+                    "main", //pName
+                    nullptr //pSpecializaionInfo
+                }, {
+                    VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, //sType
+                    nullptr, //pNext
+                    0, //flags
+                    VK_SHADER_STAGE_FRAGMENT_BIT, //stage
+                    fragmentShaderModule, //module
+                    "main", //pName
+                    nullptr //pSpecializaionInfo
+                }
+            };
+
+            VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                1, //vertexBindingDescriptionCount
+                &Particle::bindingDescription, //pVertexBindingDescription
+                static_cast<uint32_t>(Particle::attributeDescription.size()), //vertexAttributeDescriptionCount
+                Particle::attributeDescription.data() //pVertexAttributeDescriptions
+            };
+
+            VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                VK_PRIMITIVE_TOPOLOGY_POINT_LIST, //topology
+                VK_FALSE //primitiveRestartEnable
+            };
+
+            /*VkPipelineTessellationStateCreateInfo*/
+
+            VkViewport viewport{
+                0.0f, //x
+                0.0f, //y
+                (float)_extent.width, //width
+                (float)_extent.height, //height
+                0.0f, //minDepth
+                1.0f //maxDepth
+            };
+            VkRect2D scissors{
+                { //offset
+                    0, //x
+                    0 //y
+                },
+                _extent //extent
+            };
+            VkPipelineViewportStateCreateInfo viewportStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                1, //viewportCount
+                &viewport, //pViewports
+                1, //scissorCount
+                &scissors //pScissors
+            };
+
+            VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                VK_FALSE, //depthClampEnable
+                VK_FALSE, //rasterizerDiscardEnable
+                VK_POLYGON_MODE_FILL, //polygonMode
+                VK_CULL_MODE_BACK_BIT, //cullMode
+                VK_FRONT_FACE_COUNTER_CLOCKWISE, //frontFace
+                VK_FALSE, //depthBiasEnable
+                0.0f, //depthBiasConstantFactor
+                0.0f, //depthBiasClamp
+                0.0f, //depthBiasSlopeFactor
+                1.0f //lineWidth
+            };
+
+            VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                VK_SAMPLE_COUNT_1_BIT, //rasterizationSamples
+                VK_FALSE, //sampleShadingEnable
+                1.0f, //minSampleShading
+                nullptr, //pSampleMask
+                VK_FALSE, //alphaToCoverageEnable
+                VK_FALSE //alphaToOneEnable
+            };
+
+            /*VkPipelineDepthStencilStateCreateInfo*/
+
+            VkPipelineColorBlendAttachmentState colorBlendAttachmentState{
+                VK_FALSE, //blendEnable
+                VK_BLEND_FACTOR_ONE, //srcColorBlendFactor
+                VK_BLEND_FACTOR_ZERO, //dstColorBlendFactor
+                VK_BLEND_OP_ADD, //colorBlendOp
+                VK_BLEND_FACTOR_ONE, //srcAlphaBlendFactor
+                VK_BLEND_FACTOR_ZERO, //dstAlphaBlendFactor
+                VK_BLEND_OP_ADD, //alphaBlendOp
+                VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT //colorWriteMask
+            };
+            VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                VK_FALSE, //logicOpEnable
+                VK_LOGIC_OP_COPY, //logicOp
+                1, //attachmentCount
+                &colorBlendAttachmentState, //pAttachments
+                { 0.0f, 0.0f, 0.0f, 0.0f } //blendConstants[4]
+            };
+
+            /*VkDynamicState dynamicState{
+            };*/
+            VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                0, //dynamicStateCount
+                nullptr //pDynamicStates
+            };
+
+            VkPipelineLayoutCreateInfo layoutCreateInfo{
+                VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                0, //setLayoutCount
+                nullptr, //pSetLayouts
+                0, //pushConstantRangeCount
+                nullptr //pPushConstantRanges
+            };
+            if (vkCreatePipelineLayout(_device, &layoutCreateInfo, nullptr, &_pipelineLayout) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to create pipeline layout.");
+            }
+
+            VkGraphicsPipelineCreateInfo pipelineCreateInfo{
+                VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                2, //stageCount
+                shaderStageCreateInfos, //pStages
+                &vertexInputStateCreateInfo, //pVertexInputState
+                &inputAssemblyStateCreateInfo, //pInputAssemblyState
+                nullptr, //pTessellationState
+                &viewportStateCreateInfo, //pViewportState
+                &rasterizationStateCreateInfo, //pRasterizationState
+                &multisampleStateCreateInfo, //pMultisampleState
+                nullptr, //pDepthStencilState
+                &colorBlendStateCreateInfo, //pColorBlendState
+                &dynamicStateCreateInfo, //pDynamicState
+                _pipelineLayout,
+                _renderPass, //renderPass
+                0, //subpass
+                VK_NULL_HANDLE, //basePipelineHandle
+                -1 //basePipelineIndex
+            };
+            if (vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &_graphicsPipeline) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to create graphics pipeline.");
+            }
+
+            vkDestroyShaderModule(_device, vertexShaderModule, nullptr);
+            vkDestroyShaderModule(_device, fragmentShaderModule, nullptr);
+
+        }
+
+
+
+        VkShaderModule _createShaderModule(const std::string &fileName) {
+
+            std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+            if (!file.is_open()) {
+                throw std::runtime_error("Error: failed to open shader module.");
+            }
+            size_t fileSize = (size_t)file.tellg();
+            std::vector<char> buffer(fileSize);
+            file.seekg(0);
+            file.read(buffer.data(), fileSize);
+            file.close();
+
+            VkShaderModuleCreateInfo createInfo{
+                VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                fileSize, //codeSize
+                reinterpret_cast<const uint32_t*>(buffer.data()) //pCode
+            };
+            VkShaderModule shaderModule;
+            if (vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to create shader module.");
+            }
+
+            return shaderModule;
 
         }
 
