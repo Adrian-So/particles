@@ -6,7 +6,6 @@
 
 #include <iostream>
 #include <fstream>
-#include <filesystem>
 
 
 
@@ -35,6 +34,7 @@ namespace Vulkan {
 
         VkPhysicalDevice _physicalDevice;
         VkDevice _device;
+        uint32_t _queueFamilyIndex;
         VkQueue _queue;
         VkPresentModeKHR _presentMode;
         VkSurfaceFormatKHR _surfaceFormat;
@@ -48,6 +48,8 @@ namespace Vulkan {
         std::vector<VkImage> _swapchainImages;
         std::vector<VkImageView> _swapchainImageViews;
         std::vector<VkFramebuffer> _swapchainFramebuffers;
+
+        VkCommandPool _commandPool;
 
         void _createWindow();
         void _createInstance();
@@ -67,6 +69,7 @@ namespace Vulkan {
 
         void _createFramebuffers();
 
+        void _createCommandPool();
 
         static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -100,9 +103,8 @@ namespace Vulkan {
         _createFramebuffers();
         _createGraphicsPipeline();
         //createDescriptorSetLayout();
-        //createCommandPool();
+        _createCommandPool();
         //createVertexBuffer();
-        //createIndexBuffer();
         //createUniformBuffers();
         //createDescriptorPool();
         //createDescriptorSets();
@@ -125,6 +127,8 @@ namespace Vulkan {
         vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
         vkDestroyRenderPass(_device, _renderPass, nullptr);
+
+        vkDestroyCommandPool(_device, _commandPool, nullptr);
 
         vkDestroyDevice(_device, nullptr);
 
@@ -268,14 +272,14 @@ namespace Vulkan {
             _physicalDevice = physicalDevices[bestPhysicalDeviceIndex];
             _presentMode = ratings[bestPhysicalDeviceIndex].presentMode;
             _surfaceFormat = ratings[bestPhysicalDeviceIndex].surfaceFormat;
-            uint32_t queueFamilyIndex = ratings[bestPhysicalDeviceIndex].queueFamilyIndex;
+            _queueFamilyIndex = ratings[bestPhysicalDeviceIndex].queueFamilyIndex;
 
             float queuePriority = 1.0;
             VkDeviceQueueCreateInfo deviceQueueCreateInfo{
                 VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO, //sType
                 nullptr, //pNext
                 0, //flags
-                queueFamilyIndex, //queueFamilyIndex
+                _queueFamilyIndex, //queueFamilyIndex
                 1, //queueCount
                 &queuePriority //pQueuePriorities
             };
@@ -295,7 +299,7 @@ namespace Vulkan {
             if (vkCreateDevice(_physicalDevice, &deviceCreateInfo, nullptr, &_device) != VK_SUCCESS) {
                 throw std::runtime_error("Error: could not create device.");
             }
-            vkGetDeviceQueue(_device, queueFamilyIndex, 0, &_queue);
+            vkGetDeviceQueue(_device, _queueFamilyIndex, 0, &_queue);
 
         }
 
@@ -840,6 +844,22 @@ namespace Vulkan {
             }
 
             return shaderModule;
+
+        }
+
+
+
+        void _createCommandPool() {
+
+            VkCommandPoolCreateInfo createInfo{
+                VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                _queueFamilyIndex //queueFamilyIndex
+            };
+            if (vkCreateCommandPool(_device, &createInfo, nullptr, &_commandPool) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to create command pool.");
+            }
 
         }
 
