@@ -51,6 +51,9 @@ namespace Vulkan {
 
         VkCommandPool _commandPool;
 
+        VkBuffer _particlesBuffer;
+        VkDeviceMemory _particlesDeviceMemory;
+
         void _createWindow();
         void _createInstance();
         void _createSurface();
@@ -70,6 +73,11 @@ namespace Vulkan {
         void _createFramebuffers();
 
         void _createCommandPool();
+
+        void _createParticlesBuffer();
+        void _createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+        uint32_t _findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+        void _copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
         static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -94,17 +102,16 @@ namespace Vulkan {
     
     
     void init() {
-
         _createWindow();
         _createInstance();
         _createSurface();
         _createDevice();
         _createRenderPass();
-        _createFramebuffers();
         _createGraphicsPipeline();
+        _createFramebuffers();
         //createDescriptorSetLayout();
         _createCommandPool();
-        //createVertexBuffer();
+        _createParticlesBuffer();
         //createUniformBuffers();
         //createDescriptorPool();
         //createDescriptorSets();
@@ -860,6 +867,105 @@ namespace Vulkan {
             if (vkCreateCommandPool(_device, &createInfo, nullptr, &_commandPool) != VK_SUCCESS) {
                 throw std::runtime_error("Error: failed to create command pool.");
             }
+
+        }
+
+
+
+        void _createParticlesBuffer() {
+
+            VkDeviceSize bufferSize = sizeof(Particle) * particles.size();
+
+            VkBuffer stagingBuffer;
+            VkDeviceMemory stagingBufferMemory;
+            _createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+            void* data;
+            vkMapMemory(_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, particles.data(), (size_t)bufferSize);
+            vkUnmapMemory(_device, stagingBufferMemory);
+
+            _createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, _particlesBuffer, _particlesDeviceMemory);
+            _copyBuffer(stagingBuffer, _particlesBuffer, bufferSize);
+
+            vkDestroyBuffer(_device, stagingBuffer, nullptr);
+            vkFreeMemory(_device, stagingBufferMemory, nullptr);
+
+        }
+        
+        
+        
+        void _createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+
+            VkBufferCreateInfo bufferInfo{};
+            bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            bufferInfo.size = size;
+            bufferInfo.usage = usage;
+            bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (vkCreateBuffer(_device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create vertex buffer.");
+            }
+
+            VkMemoryRequirements memRequirements;
+            vkGetBufferMemoryRequirements(_device, buffer, &memRequirements);
+
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = memRequirements.size;
+            allocInfo.memoryTypeIndex = _findMemoryType(memRequirements.memoryTypeBits, properties);
+            if (vkAllocateMemory(_device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to allocate vertex buffer memory.");
+            }
+
+            vkBindBufferMemory(_device, buffer, bufferMemory, 0);
+
+        }
+
+
+
+        uint32_t _findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+            VkPhysicalDeviceMemoryProperties memProperties;
+            vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &memProperties);
+            for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+                if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                    return i;
+                }
+            }
+            throw std::runtime_error("Failed to find suitable memory type.");
+        }
+
+
+
+        void _copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+
+            VkCommandBufferAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocInfo.commandPool = _commandPool;
+            allocInfo.commandBufferCount = 1;
+
+            VkCommandBuffer commandBuffer;
+            vkAllocateCommandBuffers(_device, &allocInfo, &commandBuffer);
+
+            VkCommandBufferBeginInfo beginInfo{};
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            vkBeginCommandBuffer(commandBuffer, &beginInfo);
+            VkBufferCopy copyRegion{};
+            copyRegion.srcOffset = 0;
+            copyRegion.dstOffset = 0;
+            copyRegion.size = size;
+            vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+            vkEndCommandBuffer(commandBuffer);
+
+            VkSubmitInfo submitInfo{};
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submitInfo.commandBufferCount = 1;
+            submitInfo.pCommandBuffers = &commandBuffer;
+            vkQueueSubmit(_queue, 1, &submitInfo, VK_NULL_HANDLE);
+            vkQueueWaitIdle(_queue);
+
+            vkFreeCommandBuffers(_device, _commandPool, 1, &commandBuffer);
 
         }
 

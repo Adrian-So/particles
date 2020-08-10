@@ -15,3 +15,39 @@ struct Particle {
     static const std::vector<VkVertexInputAttributeDescription> attributeDescription;
 
 };
+
+
+
+
+
+
+constexpr float sqrtHalf = 0.70710678118f;
+constexpr float sqrtThird = 0.57735026919f;
+const std::vector<Particle> particles{
+    {{1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, 0.0f, -1.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtHalf, sqrtHalf, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtHalf, -sqrtHalf, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtHalf, sqrtHalf, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtHalf, -sqrtHalf, 0.0f}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, sqrtHalf, sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, sqrtHalf, -sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, -sqrtHalf, sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{0.0f, -sqrtHalf, -sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtHalf, 0.0f, sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtHalf, 0.0f, sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtHalf, 0.0f, -sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtHalf, 0.0f, -sqrtHalf}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtThird, sqrtThird, sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtThird, sqrtThird, -sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtThird, -sqrtThird, sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{sqrtThird, -sqrtThird, -sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtThird, sqrtThird, sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtThird, sqrtThird, -sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtThird, -sqrtThird, sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+    {{-sqrtThird, -sqrtThird, -sqrtThird}, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}},
+};
