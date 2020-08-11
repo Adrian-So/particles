@@ -39,6 +39,7 @@ namespace Vulkan {
         VkPresentModeKHR _presentMode;
         VkSurfaceFormatKHR _surfaceFormat;
         VkExtent2D _extent;
+        uint32_t _imageCount;
 
         VkRenderPass _renderPass;
         VkPipelineLayout _pipelineLayout;
@@ -53,6 +54,8 @@ namespace Vulkan {
 
         VkBuffer _particlesBuffer;
         VkDeviceMemory _particlesDeviceMemory;
+
+        std::vector<VkCommandBuffer> _commandBuffers;
 
         void _createWindow();
         void _createInstance();
@@ -78,6 +81,8 @@ namespace Vulkan {
         void _createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
         uint32_t _findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         void _copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+        void _createCommandBuffers();
 
         static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -115,7 +120,7 @@ namespace Vulkan {
         //createUniformBuffers();
         //createDescriptorPool();
         //createDescriptorSets();
-        //createCommandBuffers();
+        _createCommandBuffers();
         //createSyncObjects();
     }
 
@@ -131,9 +136,14 @@ namespace Vulkan {
         }
         vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 
+        vkFreeCommandBuffers(_device, _commandPool, _commandBuffers.size(), _commandBuffers.data());
+
         vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
         vkDestroyRenderPass(_device, _renderPass, nullptr);
+
+        vkDestroyBuffer(_device, _particlesBuffer, nullptr);
+        vkFreeMemory(_device, _particlesDeviceMemory, nullptr);
 
         vkDestroyCommandPool(_device, _commandPool, nullptr);
 
@@ -561,13 +571,13 @@ namespace Vulkan {
                 _extent.height = _extent.height < capabilities.maxImageExtent.height ? _extent.height : capabilities.maxImageExtent.height;
             }
 
-            uint32_t imageCount = 3;
-            if (imageCount < capabilities.minImageCount) {
-                imageCount = capabilities.minImageCount;
+            _imageCount = 3;
+            if (_imageCount < capabilities.minImageCount) {
+                _imageCount = capabilities.minImageCount;
             }
             if (capabilities.maxImageCount > 0) {
-                if (imageCount > capabilities.maxImageCount) {
-                    imageCount = capabilities.maxImageCount;
+                if (_imageCount > capabilities.maxImageCount) {
+                    _imageCount = capabilities.maxImageCount;
                 }
             }
 
@@ -576,7 +586,7 @@ namespace Vulkan {
                 nullptr, //pNext
                 0, //flags
                 _surface, //surface
-                imageCount, //minImageCount
+                _imageCount, //minImageCount
                 _surfaceFormat.format, //imageFormat
                 _surfaceFormat.colorSpace, //imageColorSpace
                 _extent, //imageExtent
@@ -595,11 +605,11 @@ namespace Vulkan {
                 throw std::runtime_error("Error: failed to create swapchain.");
             }
 
-            vkGetSwapchainImagesKHR(_device, _swapchain, &imageCount, nullptr);
-            _swapchainImages.resize(imageCount);
-            vkGetSwapchainImagesKHR(_device, _swapchain, &imageCount, _swapchainImages.data());
+            vkGetSwapchainImagesKHR(_device, _swapchain, &_imageCount, nullptr);
+            _swapchainImages.resize(_imageCount);
+            vkGetSwapchainImagesKHR(_device, _swapchain, &_imageCount, _swapchainImages.data());
 
-            _swapchainImageViews.resize(imageCount);
+            _swapchainImageViews.resize(_imageCount);
             VkImageViewCreateInfo imageViewCreateInfo{
                 VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO, //sType
                 nullptr, //pNext
@@ -621,14 +631,14 @@ namespace Vulkan {
                     1 //layerCount
                 }
             };
-            for (size_t i = 0; i < imageCount; i++) {
+            for (size_t i = 0; i < _imageCount; i++) {
                 imageViewCreateInfo.image = _swapchainImages[i];
                 if (vkCreateImageView(_device, &imageViewCreateInfo, nullptr, &_swapchainImageViews[i]) != VK_SUCCESS) {
                     throw std::runtime_error("Error: failed to create image view.");
                 }
             }
 
-            _swapchainFramebuffers.resize(imageCount);
+            _swapchainFramebuffers.resize(_imageCount);
             VkFramebufferCreateInfo framebufferCreateInfo{
                 VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO, //sType
                 nullptr, //pNext
@@ -640,7 +650,7 @@ namespace Vulkan {
                 _extent.height, //height
                 1 //layers
             };
-            for (size_t i = 0; i < imageCount; i++) {
+            for (size_t i = 0; i < _imageCount; i++) {
                 framebufferCreateInfo.pAttachments = &_swapchainImageViews[i];
                 if (vkCreateFramebuffer(_device, &framebufferCreateInfo, nullptr, &_swapchainFramebuffers[i]) != VK_SUCCESS) {
                     throw std::runtime_error("Error: failed to create framebuffer.");
@@ -966,6 +976,61 @@ namespace Vulkan {
             vkQueueWaitIdle(_queue);
 
             vkFreeCommandBuffers(_device, _commandPool, 1, &commandBuffer);
+
+        }
+
+
+
+        void _createCommandBuffers() {
+
+            _commandBuffers.resize(_imageCount);
+
+            VkCommandBufferAllocateInfo commandBufferAllocateInfo{
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, //sType
+                nullptr, //pNext
+                _commandPool, //commandPool
+                VK_COMMAND_BUFFER_LEVEL_PRIMARY, //level
+                _imageCount //commandBufferCount
+            };
+            if (vkAllocateCommandBuffers(_device, &commandBufferAllocateInfo, _commandBuffers.data()) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to allocate command buffers.");
+            }
+
+            VkCommandBufferBeginInfo commandBufferBeginInfo{
+                VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO, //sType
+                nullptr, //pNext
+                0, //flags
+                nullptr //pInheritanceInfo
+            };
+
+            VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+            VkRenderPassBeginInfo renderPassBeginInfo{
+                VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, //sType
+                nullptr, //pNext
+                _renderPass, //renderPass
+                VK_NULL_HANDLE, //framebuffer
+                { 0, 0 }, //renderArea
+                1, //clearValueCount
+                &clearColor //pClearValues
+            };
+
+            VkDeviceSize offset = 0;
+
+            for (size_t i = 0; i < _imageCount; i++) {
+                if (vkBeginCommandBuffer(_commandBuffers[i], &commandBufferBeginInfo) != VK_SUCCESS) {
+                    throw std::runtime_error("Error: failed to begin recording command buffer.");
+                }
+                renderPassBeginInfo.framebuffer = _swapchainFramebuffers[i];
+                vkCmdBeginRenderPass(_commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+                    vkCmdBindPipeline(_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, _graphicsPipeline);
+                    vkCmdBindVertexBuffers(_commandBuffers[i], 0, 1, &_particlesBuffer, &offset);
+                    vkCmdDraw(_commandBuffers[i], particles.size(), 1, 0, 0);
+                vkCmdEndRenderPass(_commandBuffers[i]);
+                if (vkEndCommandBuffer(_commandBuffers[i]) != VK_SUCCESS) {
+                    throw std::runtime_error("Error: failed to record command buffer.");
+                }
+            }
 
         }
 
