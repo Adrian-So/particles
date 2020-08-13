@@ -19,6 +19,8 @@ namespace Vulkan {
 
     namespace {
 
+        const int MAX_FRAMES_IN_FLIGHT;
+
         struct PhysicalDeviceRating {
             int rating;
             uint32_t queueFamilyIndex;
@@ -57,6 +59,11 @@ namespace Vulkan {
 
         std::vector<VkCommandBuffer> _commandBuffers;
 
+        std::vector<VkSemaphore> _imageAvailableSemaphores;
+        std::vector<VkSemaphore> _renderFinishedSemaphores;
+        std::vector<VkFence> _inFlightFences;
+        std::vector<VkFence> _imagesInFlight;
+
         void _createWindow();
         void _createInstance();
         void _createSurface();
@@ -76,6 +83,8 @@ namespace Vulkan {
         void _createFramebuffers();
 
         void _createCommandPool();
+
+        void _createSyncObjects();
 
         void _createParticlesBuffer();
         void _createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
@@ -121,7 +130,7 @@ namespace Vulkan {
         //createDescriptorPool();
         //createDescriptorSets();
         _createCommandBuffers();
-        //createSyncObjects();
+        _createSyncObjects();
     }
 
 
@@ -1029,6 +1038,39 @@ namespace Vulkan {
                 vkCmdEndRenderPass(_commandBuffers[i]);
                 if (vkEndCommandBuffer(_commandBuffers[i]) != VK_SUCCESS) {
                     throw std::runtime_error("Error: failed to record command buffer.");
+                }
+            }
+
+        }
+
+
+
+        void _createSyncObjects() {
+
+            _imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+            _renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+            _inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
+            _imagesInFlight.resize(_imageCount, VK_NULL_HANDLE);
+
+            const VkSemaphoreCreateInfo semaphoreCreateInfo{
+                VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0 //flags
+            };
+
+            const VkFenceCreateInfo fenceCreateInfo{
+                VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, //sType
+                nullptr, //pNext
+                0 //flags
+            };
+
+            for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+                if (vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_imageAvailableSemaphores[i]) != VK_SUCCESS ||
+                    vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_renderFinishedSemaphores[i]) != VK_SUCCESS ||
+                    vkCreateFence(_device, &fenceCreateInfo, nullptr, &_inFlightFences[i]) != VK_SUCCESS
+                ) {
+                    throw std::runtime_error("Error: failed to create synchronisation objects.");
+
                 }
             }
 
