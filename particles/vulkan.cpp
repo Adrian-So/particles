@@ -19,14 +19,16 @@ namespace Vulkan {
 
     namespace {
 
-        const int MAX_FRAMES_IN_FLIGHT;
+        const int MAX_FRAMES_IN_FLIGHT = 2;
 
-        struct PhysicalDeviceRating {
+        struct PhysicalDeviceChoice {
             int rating;
             uint32_t queueFamilyIndex;
             VkPresentModeKHR presentMode;
             VkSurfaceFormatKHR surfaceFormat;
-            VkSurfaceCapabilitiesKHR surfaceCapabilities;
+            VkExtent2D extent;
+            uint32_t imageCount;
+            VkSurfaceTransformFlagBitsKHR preTransform;
         };
 
         GLFWwindow* _window;
@@ -42,6 +44,7 @@ namespace Vulkan {
         VkSurfaceFormatKHR _surfaceFormat;
         VkExtent2D _extent;
         uint32_t _imageCount;
+        VkSurfaceTransformFlagBitsKHR _preTransform;
 
         VkRenderPass _renderPass;
         VkPipelineLayout _pipelineLayout;
@@ -63,18 +66,20 @@ namespace Vulkan {
         std::vector<VkSemaphore> _renderFinishedSemaphores;
         std::vector<VkFence> _inFlightFences;
         std::vector<VkFence> _imagesInFlight;
+        size_t _currentFrame = 0;
 
         void _createWindow();
         void _createInstance();
         void _createSurface();
 
         void _createDevice();
-        PhysicalDeviceRating _ratePhysicalDevice(const VkPhysicalDevice physicalDevice);
-        int _rateDeviceExtensions(const VkPhysicalDevice physicalDevice);
-        int _rateDeviceQueueFamilies(const VkPhysicalDevice physicalDevice, uint32_t& queueFamilyIndex);
-        int _rateDevicePresentMode(const VkPhysicalDevice physicalDevice, VkPresentModeKHR& presentMode);
-        int _rateDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, VkSurfaceFormatKHR& surfaceFormat);
-        int _rateDeviceProperties(const VkPhysicalDevice physicalDevice);
+        PhysicalDeviceChoice _ratePhysicalDevice(const VkPhysicalDevice physicalDevice);
+        int _chooseDeviceExtensions(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
+        int _chooseDeviceQueueFamilies(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
+        int _chooseDevicePresentMode(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
+        int _chooseDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
+        int _chooseDeviceProperties(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
+        int _chooseDeviceSurfaceCapabilities(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
 
         void _createRenderPass();
         void _createGraphicsPipeline();
@@ -92,6 +97,8 @@ namespace Vulkan {
         void _copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 
         void _createCommandBuffers();
+
+        void _draw();
 
         static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
             std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
@@ -135,7 +142,23 @@ namespace Vulkan {
 
 
 
+    void run() {
+        while (!glfwWindowShouldClose(_window)) {
+            glfwPollEvents();
+            _draw();
+        }
+        vkDeviceWaitIdle(_device);
+    }
+
+
+
     void cleanup() {
+
+        for (auto i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            vkDestroySemaphore(_device, _renderFinishedSemaphores[i], nullptr);
+            vkDestroySemaphore(_device, _imageAvailableSemaphores[i], nullptr);
+            vkDestroyFence(_device, _inFlightFences[i], nullptr);
+        }
 
         for (auto framebuffer : _swapchainFramebuffers) {
             vkDestroyFramebuffer(_device, framebuffer, nullptr);
@@ -145,7 +168,7 @@ namespace Vulkan {
         }
         vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 
-        vkFreeCommandBuffers(_device, _commandPool, _commandBuffers.size(), _commandBuffers.data());
+        vkFreeCommandBuffers(_device, _commandPool, static_cast<uint32_t>(_commandBuffers.size()), _commandBuffers.data());
 
         vkDestroyPipeline(_device, _graphicsPipeline, nullptr);
         vkDestroyPipelineLayout(_device, _pipelineLayout, nullptr);
@@ -284,7 +307,7 @@ namespace Vulkan {
 
             int highestRating = -1;
             int bestPhysicalDeviceIndex = -1;
-            std::vector<PhysicalDeviceRating> ratings(physicalDeviceCount);
+            std::vector<PhysicalDeviceChoice> ratings(physicalDeviceCount);
             for (uint32_t i = 0; i < physicalDeviceCount; i++) {
                 ratings[i] = _ratePhysicalDevice(physicalDevices[i]);
                 if (ratings[i].rating > highestRating) {
@@ -299,6 +322,9 @@ namespace Vulkan {
             _presentMode = ratings[bestPhysicalDeviceIndex].presentMode;
             _surfaceFormat = ratings[bestPhysicalDeviceIndex].surfaceFormat;
             _queueFamilyIndex = ratings[bestPhysicalDeviceIndex].queueFamilyIndex;
+            _extent = ratings[bestPhysicalDeviceIndex].extent;
+            _imageCount = ratings[bestPhysicalDeviceIndex].imageCount;
+            _preTransform = ratings[bestPhysicalDeviceIndex].preTransform;
 
             float queuePriority = 1.0;
             VkDeviceQueueCreateInfo deviceQueueCreateInfo{
@@ -331,62 +357,38 @@ namespace Vulkan {
 
 
 
-        PhysicalDeviceRating _ratePhysicalDevice(const VkPhysicalDevice physicalDevice) {
+        PhysicalDeviceChoice _ratePhysicalDevice(const VkPhysicalDevice physicalDevice) {
 
-            PhysicalDeviceRating rating{
+            PhysicalDeviceChoice choice{
                 0, 0, VK_PRESENT_MODE_FIFO_KHR, VK_FORMAT_UNDEFINED
             };
-            int result;
 
-            /* vvv array of functions instead? vvv */
+            std::vector<int(*)(const VkPhysicalDevice, PhysicalDeviceChoice&)> chooseFunctions = {
+                _chooseDeviceExtensions,
+                _chooseDevicePresentMode,
+                _chooseDeviceSurfaceFormat,
+                _chooseDeviceQueueFamilies,
+                _chooseDeviceProperties,
+                _chooseDeviceSurfaceCapabilities,
+            };
 
-            result = _rateDeviceExtensions(physicalDevice);
-            if (result > 0) {
-                rating.rating += result;
-            } else {
-                rating.rating = -1;
-                return rating;
+            for (auto chooseFunction : chooseFunctions) {
+                int result = chooseFunction(physicalDevice, choice);
+                if (result > 0) {
+                    choice.rating += result;
+                } else {
+                    choice.rating = -1;
+                    return choice;
+                }
             }
 
-            result = _rateDevicePresentMode(physicalDevice, rating.presentMode);
-            if (result > 0) {
-                rating.rating += result;
-            } else {
-                rating.rating = -1;
-                return rating;
-            }
-
-            result = _rateDeviceSurfaceFormat(physicalDevice, rating.surfaceFormat);
-            if (result > 0) {
-                rating.rating += result;
-            } else {
-                rating.rating = -1;
-                return rating;
-            }
-
-            result = _rateDeviceQueueFamilies(physicalDevice, rating.queueFamilyIndex);
-            if (result > 0) {
-                rating.rating += result;
-            } else {
-                rating.rating = -1;
-                return rating;
-            }
-
-            result = _rateDeviceProperties(physicalDevice);
-            if (result > 0) {
-                rating.rating += result;
-            } else {
-                rating.rating = -1;
-                return rating;
-            }
-
-            return rating;
+            return choice;
 
         }
 
 
 
-        int _rateDeviceExtensions(const VkPhysicalDevice physicalDevice) {
+        int _chooseDeviceExtensions(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
 
             uint32_t extensionCount;
             vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
@@ -412,7 +414,7 @@ namespace Vulkan {
 
 
 
-        int _rateDeviceQueueFamilies(const VkPhysicalDevice physicalDevice, uint32_t& queueFamilyIndex) {
+        int _chooseDeviceQueueFamilies(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
 
             uint32_t queueFamilyCount;
             vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
@@ -424,7 +426,7 @@ namespace Vulkan {
                 VkBool32 surfaceSupport = VK_FALSE;
                 vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, i, _surface, &surfaceSupport);
                 if ((queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) && (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && surfaceSupport) {
-                    queueFamilyIndex = i;
+                    choice.queueFamilyIndex = i;
                     return 256;
                 }
             }
@@ -435,7 +437,7 @@ namespace Vulkan {
 
 
 
-        int _rateDevicePresentMode(const VkPhysicalDevice physicalDevice, VkPresentModeKHR& presentMode) {
+        int _chooseDevicePresentMode(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
 
             uint32_t presentModeCount = 0;
             vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, _surface, &presentModeCount, nullptr);
@@ -448,19 +450,19 @@ namespace Vulkan {
             for (auto mode : presentModes) {
                 // Better rating of present modes needed
                 if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                    presentMode = mode;
+                    choice.presentMode = mode;
                     return 64;
                 }
             }
 
-            presentMode = VK_PRESENT_MODE_FIFO_KHR;
+            choice.presentMode = VK_PRESENT_MODE_FIFO_KHR;
             return 0;
 
         }
 
 
 
-        int _rateDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, VkSurfaceFormatKHR& surfaceFormat) {
+        int _chooseDeviceSurfaceFormat(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
 
             uint32_t formatCount = 0;
             vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, _surface, &formatCount, nullptr);
@@ -473,19 +475,19 @@ namespace Vulkan {
             for (auto format : formats) {
                 // Better rating of formats needed
                 if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                    surfaceFormat = format;
+                    choice.surfaceFormat = format;
                     return 64;
                 }
             }
 
-            surfaceFormat = formats[0];
+            choice.surfaceFormat = formats[0];
             return 0;
 
         }
 
 
 
-        int _rateDeviceProperties(const VkPhysicalDevice physicalDevice) {
+        int _chooseDeviceProperties(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
 
             VkPhysicalDeviceProperties properties{};
             vkGetPhysicalDeviceProperties(physicalDevice, &properties);
@@ -498,6 +500,40 @@ namespace Vulkan {
                 default:
                     return -1;
             }
+
+        }
+
+
+
+        int _chooseDeviceSurfaceCapabilities(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice) {
+
+            VkSurfaceCapabilitiesKHR capabilities;
+            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, _surface, &capabilities);
+
+            if (capabilities.currentExtent.width != UINT32_MAX) {
+                choice.extent = capabilities.currentExtent;
+            } else {
+                int width, height;
+                glfwGetFramebufferSize(_window, &width, &height);
+                choice.extent.width = width > capabilities.minImageExtent.width ? width : capabilities.minImageExtent.width;
+                choice.extent.width = choice.extent.width < capabilities.maxImageExtent.width ? choice.extent.width : capabilities.maxImageExtent.width;
+                choice.extent.height = height > capabilities.minImageExtent.height ? height : capabilities.minImageExtent.height;
+                choice.extent.height = choice.extent.height < capabilities.maxImageExtent.height ? choice.extent.height : capabilities.maxImageExtent.height;
+            }
+
+            choice.imageCount = 3;
+            if (choice.imageCount < capabilities.minImageCount) {
+                choice.imageCount = capabilities.minImageCount;
+            }
+            if (capabilities.maxImageCount > 0) {
+                if (choice.imageCount > capabilities.maxImageCount) {
+                    choice.imageCount = capabilities.maxImageCount;
+                }
+            }
+
+            choice.preTransform = capabilities.currentTransform;
+
+            return 1;
 
         }
 
@@ -566,30 +602,6 @@ namespace Vulkan {
 
         void _createFramebuffers() {
 
-            VkSurfaceCapabilitiesKHR capabilities;
-            vkGetPhysicalDeviceSurfaceCapabilitiesKHR(_physicalDevice, _surface, &capabilities);
-
-            if (capabilities.currentExtent.width != UINT32_MAX) {
-                _extent = capabilities.currentExtent;
-            } else {
-                int width, height;
-                glfwGetFramebufferSize(_window, &width, &height);
-                _extent.width = width > capabilities.minImageExtent.width ? width : capabilities.minImageExtent.width;
-                _extent.width = _extent.width < capabilities.maxImageExtent.width ? _extent.width : capabilities.maxImageExtent.width;
-                _extent.height = height > capabilities.minImageExtent.height ? height : capabilities.minImageExtent.height;
-                _extent.height = _extent.height < capabilities.maxImageExtent.height ? _extent.height : capabilities.maxImageExtent.height;
-            }
-
-            _imageCount = 3;
-            if (_imageCount < capabilities.minImageCount) {
-                _imageCount = capabilities.minImageCount;
-            }
-            if (capabilities.maxImageCount > 0) {
-                if (_imageCount > capabilities.maxImageCount) {
-                    _imageCount = capabilities.maxImageCount;
-                }
-            }
-
             VkSwapchainCreateInfoKHR swapchainCreateInfo{
                 VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, //sType
                 nullptr, //pNext
@@ -604,7 +616,7 @@ namespace Vulkan {
                 VK_SHARING_MODE_EXCLUSIVE, //imageSharingMode
                 0, //queueFamilyIndexCount
                 nullptr, //pQueueFamilyIndices
-                capabilities.currentTransform, //preTransform
+                _preTransform, //preTransform
                 VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, //compositeAlpha
                 _presentMode, //presentMode
                 VK_TRUE, //clipped
@@ -900,7 +912,9 @@ namespace Vulkan {
             _createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
 
             void* data;
-            vkMapMemory(_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            if (vkMapMemory(_device, stagingBufferMemory, 0, bufferSize, 0, &data) != VK_SUCCESS) {
+                throw std::runtime_error("Error: unable to map memory.");
+            }
             memcpy(data, particles.data(), (size_t)bufferSize);
             vkUnmapMemory(_device, stagingBufferMemory);
 
@@ -1013,13 +1027,15 @@ namespace Vulkan {
             };
 
             VkClearValue clearColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-
             VkRenderPassBeginInfo renderPassBeginInfo{
                 VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO, //sType
                 nullptr, //pNext
                 _renderPass, //renderPass
                 VK_NULL_HANDLE, //framebuffer
-                { 0, 0 }, //renderArea
+                { //renderArea
+                    { 0, 0 }, //offset
+                    _extent //extent
+                },
                 1, //clearValueCount
                 &clearColor //pClearValues
             };
@@ -1034,7 +1050,7 @@ namespace Vulkan {
                 vkCmdBeginRenderPass(_commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
                     vkCmdBindPipeline(_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, _graphicsPipeline);
                     vkCmdBindVertexBuffers(_commandBuffers[i], 0, 1, &_particlesBuffer, &offset);
-                    vkCmdDraw(_commandBuffers[i], particles.size(), 1, 0, 0);
+                    vkCmdDraw(_commandBuffers[i], static_cast<uint32_t>(particles.size()), 1, 0, 0);
                 vkCmdEndRenderPass(_commandBuffers[i]);
                 if (vkEndCommandBuffer(_commandBuffers[i]) != VK_SUCCESS) {
                     throw std::runtime_error("Error: failed to record command buffer.");
@@ -1061,7 +1077,7 @@ namespace Vulkan {
             const VkFenceCreateInfo fenceCreateInfo{
                 VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, //sType
                 nullptr, //pNext
-                0 //flags
+                VK_FENCE_CREATE_SIGNALED_BIT //flags
             };
 
             for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -1070,9 +1086,58 @@ namespace Vulkan {
                     vkCreateFence(_device, &fenceCreateInfo, nullptr, &_inFlightFences[i]) != VK_SUCCESS
                 ) {
                     throw std::runtime_error("Error: failed to create synchronisation objects.");
-
                 }
             }
+
+        }
+
+
+
+        void _draw() {
+
+            vkWaitForFences(_device, 1, &_inFlightFences[_currentFrame], VK_TRUE, UINT64_MAX);
+
+            uint32_t imageIndex;
+            if (vkAcquireNextImageKHR(_device, _swapchain, UINT64_MAX, _imageAvailableSemaphores[_currentFrame], VK_NULL_HANDLE, &imageIndex) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to acquire swapchain image.");
+            }
+            if (_imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+                vkWaitForFences(_device, 1, &_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+            }
+            _imagesInFlight[imageIndex] = _inFlightFences[_currentFrame];
+
+            VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            VkSubmitInfo submitInfo{
+                VK_STRUCTURE_TYPE_SUBMIT_INFO, //sType
+                nullptr, //pNext
+                1, //waitSemaphoreCount
+                &_imageAvailableSemaphores[_currentFrame], //pWaitSemaphores
+                &waitStages, //pWaitDstStageMask
+                1, //commandBufferCount
+                &_commandBuffers[imageIndex], //pCommandBuffers
+                1, //signalSemaphoreCount
+                &_renderFinishedSemaphores[_currentFrame] //pSignalSemaphores
+            };
+            vkResetFences(_device, 1, &_imagesInFlight[_currentFrame]);
+            if (vkQueueSubmit(_queue, 1, &submitInfo, _imagesInFlight[_currentFrame]) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to submit draw command.");
+            }
+
+            VkPresentInfoKHR presentInfo{
+                VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, //sType
+                nullptr, //pNext
+                1, //waitSemaphoreCount
+                &_renderFinishedSemaphores[_currentFrame], //pWaitSemaphores
+                1, //swapchainCount
+                &_swapchain, //pSwapchains
+                &imageIndex, //pImageIndices
+                nullptr //pResults
+            };
+            if (vkQueuePresentKHR(_queue, &presentInfo) != VK_SUCCESS) {
+                throw std::runtime_error("Error: failed to present swapchain image.");
+            }
+
+            _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
         }
 

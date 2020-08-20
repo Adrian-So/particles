@@ -19,7 +19,7 @@
 namespace Vulkan {
 
     const std::vector<const char*> validationLayers = {
-#ifdef ENABLE_VALIDATION_LAYERS
+#ifdef VALIDATION_LAYERS_ENABLED
         "VK_LAYER_KHRONOS_validation"
 #endif
     };
@@ -29,6 +29,7 @@ namespace Vulkan {
     };
 
     void init();
+    void run();
     void cleanup();
 
 };

@@ -7,9 +7,9 @@
 
 struct Particle {
 
-    glm::vec3 r;
-    glm::vec3 v;
-    glm::vec3 colour;
+    alignas(16) glm::vec3 r;
+    alignas(16) glm::vec3 v;
+    alignas(16) glm::vec3 colour;
 
     static const VkVertexInputBindingDescription bindingDescription;
     static const std::vector<VkVertexInputAttributeDescription> attributeDescription;
