@@ -7,28 +7,28 @@
 
 
 const VkVertexInputBindingDescription Particle::bindingDescription = {
-    0, //binding
-    sizeof(Particle), //stride
-    VK_VERTEX_INPUT_RATE_VERTEX //inputRate
+    .binding    = 0,
+    .stride     = sizeof(Particle),
+    .inputRate  = VK_VERTEX_INPUT_RATE_VERTEX,
 };
 
 
 
 const std::vector<VkVertexInputAttributeDescription> Particle::attributeDescription = {
     {
-        0, //location
-        0, //binding
-        VK_FORMAT_R32G32B32_SFLOAT, //format
-        offsetof(Particle, r) //offset
+        .location   = 0,
+        .binding    = 0,
+        .format     = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset     = offsetof(Particle, r),
     }, {
-        1, //location
-        0, //binding
-        VK_FORMAT_R32G32B32_SFLOAT, //format
-        offsetof(Particle, v) //offset
+        .location   = 1,
+        .binding    = 0,
+        .format     = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset     = offsetof(Particle, v),
     }, {
-        2, //location
-        0, //binding
-        VK_FORMAT_R32G32B32_SFLOAT, //format
-        offsetof(Particle, colour) //offset
+        .location   = 2,
+        .binding    = 0,
+        .format     = VK_FORMAT_R32G32B32_SFLOAT,
+        .offset     = offsetof(Particle, colour),
     }
 };
