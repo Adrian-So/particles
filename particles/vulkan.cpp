@@ -42,7 +42,7 @@ static void _createRenderPass();
 static void _createGraphicsPipeline();
 static VkShaderModule _createShaderModule(const std::string& fileName);
 
-static void _createFramebuffers();
+static void _createSwapchain();
 
 static void _createCommandPool();
 
@@ -100,12 +100,17 @@ static std::vector<VkFence> _inFlightFences;
 static std::vector<VkFence> _imagesInFlight;
 static size_t _currentFrame = 0;
 
+#ifdef FRAME_COUNTER_ENABLED
+static int _frameCounter = 0;
+#endif
 
 
 
 
 
 
+
+#ifdef VALIDATION_LAYERS_ENABLED
 static VKAPI_ATTR VkBool32 VKAPI_CALL _debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
     std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
     return VK_FALSE;
@@ -114,11 +119,12 @@ static const VkDebugUtilsMessengerCreateInfoEXT _debugMessengerCreateInfo{
     .sType              = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
     .pNext              = nullptr,
     .flags              = 0,
-    .messageSeverity    = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+    .messageSeverity    = VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
     .messageType        = VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
     .pfnUserCallback    = _debugCallback,
     .pUserData          = nullptr,
 };
+#endif
 
 
 
@@ -133,7 +139,7 @@ void Vulkan::init() {
     _createDevice();
     _createRenderPass();
     _createGraphicsPipeline();
-    _createFramebuffers();
+    _createSwapchain();
     //createDescriptorSetLayout();
     _createCommandPool();
     _createParticlesBuffer();
@@ -600,166 +606,176 @@ static void _createRenderPass() {
 
 static void _createGraphicsPipeline() {
 
-    VkShaderModule vertexShaderModule = _createShaderModule("..\\shaders\\vert.spv");
-    VkShaderModule fragmentShaderModule = _createShaderModule("..\\shaders\\frag.spv");
+    VkShaderModule vertexShaderModule =
+#ifdef NDEBUG
+        _createShaderModule("../../shaders/vert.spv");
+#else
+        _createShaderModule("../shaders/vert.spv");
+#endif
+    VkShaderModule fragmentShaderModule =
+#ifdef NDEBUG
+        _createShaderModule("../../shaders/frag.spv");
+#else
+        _createShaderModule("../shaders/frag.spv");
+#endif
     VkPipelineShaderStageCreateInfo shaderStageCreateInfos[]{
         {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vertexShaderModule,
-            .pName = "main",
-            .pSpecializationInfo = nullptr,
+            .sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext                  = nullptr,
+            .flags                  = 0,
+            .stage                  = VK_SHADER_STAGE_VERTEX_BIT,
+            .module                 = vertexShaderModule,
+            .pName                  = "main",
+            .pSpecializationInfo    = nullptr,
         }, {
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = fragmentShaderModule,
-            .pName = "main",
-            .pSpecializationInfo = nullptr,
+            .sType                  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .pNext                  = nullptr,
+            .flags                  = 0,
+            .stage                  = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module                 = fragmentShaderModule,
+            .pName                  = "main",
+            .pSpecializationInfo    = nullptr,
         }
     };
 
     VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &Particle::bindingDescription,
-        .vertexAttributeDescriptionCount = static_cast<uint32_t>(Particle::attributeDescription.size()),
-        .pVertexAttributeDescriptions = Particle::attributeDescription.data(),
+        .sType                              = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .pNext                              = nullptr,
+        .flags                              = 0,
+        .vertexBindingDescriptionCount      = 1,
+        .pVertexBindingDescriptions         = &Particle::bindingDescription,
+        .vertexAttributeDescriptionCount    = static_cast<uint32_t>(Particle::attributeDescription.size()),
+        .pVertexAttributeDescriptions       = Particle::attributeDescription.data(),
     };
 
     VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = 0,
+        .topology               = VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
         .primitiveRestartEnable = VK_FALSE,
     };
 
     /*VkPipelineTessellationStateCreateInfo*/
 
     VkViewport viewport{
-        .x = 0.0f,
-        .y = 0.0f,
-        .width = (float)_extent.width,
-        .height = (float)_extent.height,
-        .minDepth = 0.0f,
-        .maxDepth = 1.0f,
+        .x          = 0.0f,
+        .y          = 0.0f,
+        .width      = (float)_extent.width,
+        .height     = (float)_extent.height,
+        .minDepth   = 0.0f,
+        .maxDepth   = 1.0f,
     };
     VkRect2D scissors{
         .offset = {
-            .x = 0,
-            .y = 0, },
+            .x      = 0,
+            .y      = 0, },
         .extent = _extent,
     };
     VkPipelineViewportStateCreateInfo viewportStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .viewportCount = 1,
-        .pViewports = &viewport,
-        .scissorCount = 1,
-        .pScissors = &scissors,
+        .sType          = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .pNext          = nullptr,
+        .flags          = 0,
+        .viewportCount  = 1,
+        .pViewports     = &viewport,
+        .scissorCount   = 1,
+        .pScissors      = &scissors,
     };
 
     VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .depthClampEnable = VK_FALSE,
-        .rasterizerDiscardEnable = VK_FALSE,
-        .polygonMode = VK_POLYGON_MODE_FILL,
-        .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        .depthBiasEnable = VK_FALSE,
-        .depthBiasConstantFactor = 0.0f,
-        .depthBiasClamp = 0.0f,
-        .depthBiasSlopeFactor = 0.0f,
-        .lineWidth = 1.0f,
+        .sType                      = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .pNext                      = nullptr,
+        .flags                      = 0,
+        .depthClampEnable           = VK_FALSE,
+        .rasterizerDiscardEnable    = VK_FALSE,
+        .polygonMode                = VK_POLYGON_MODE_FILL,
+        .cullMode                   = VK_CULL_MODE_BACK_BIT,
+        .frontFace                  = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .depthBiasEnable            = VK_FALSE,
+        .depthBiasConstantFactor    = 0.0f,
+        .depthBiasClamp             = 0.0f,
+        .depthBiasSlopeFactor       = 0.0f,
+        .lineWidth                  = 1.0f,
     };
 
     VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
-        .sampleShadingEnable = VK_FALSE,
-        .minSampleShading = 1.0f,
-        .pSampleMask = nullptr,
-        .alphaToCoverageEnable = VK_FALSE,
-        .alphaToOneEnable = VK_FALSE,
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = 0,
+        .rasterizationSamples   = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable    = VK_FALSE,
+        .minSampleShading       = 1.0f,
+        .pSampleMask            = nullptr,
+        .alphaToCoverageEnable  = VK_FALSE,
+        .alphaToOneEnable       = VK_FALSE,
     };
 
     /*VkPipelineDepthStencilStateCreateInfo*/
 
     VkPipelineColorBlendAttachmentState colorBlendAttachmentState{
-        .blendEnable = VK_FALSE,
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .colorBlendOp = VK_BLEND_OP_ADD,
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
-        .alphaBlendOp = VK_BLEND_OP_ADD,
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+        .blendEnable            = VK_FALSE,
+        .srcColorBlendFactor    = VK_BLEND_FACTOR_ONE,
+        .dstColorBlendFactor    = VK_BLEND_FACTOR_ZERO,
+        .colorBlendOp           = VK_BLEND_OP_ADD,
+        .srcAlphaBlendFactor    = VK_BLEND_FACTOR_ONE,
+        .dstAlphaBlendFactor    = VK_BLEND_FACTOR_ZERO,
+        .alphaBlendOp           = VK_BLEND_OP_ADD,
+        .colorWriteMask         = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
     };
     VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .logicOpEnable = VK_FALSE,
-        .logicOp = VK_LOGIC_OP_COPY,
-        .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachmentState,
-        .blendConstants = { 0.0f, 0.0f, 0.0f, 0.0f },
+        .sType              = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .pNext              = nullptr,
+        .flags              = 0,
+        .logicOpEnable      = VK_FALSE,
+        .logicOp            = VK_LOGIC_OP_COPY,
+        .attachmentCount    = 1,
+        .pAttachments       = &colorBlendAttachmentState,
+        .blendConstants     = { 0.0f, 0.0f, 0.0f, 0.0f },
     };
 
     /*VkDynamicState dynamicState{
     };*/
     VkPipelineDynamicStateCreateInfo dynamicStateCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .dynamicStateCount = 0,
-        .pDynamicStates = nullptr,
+        .sType              = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .pNext              = nullptr,
+        .flags              = 0,
+        .dynamicStateCount  = 0,
+        .pDynamicStates     = nullptr,
     };
 
     VkPipelineLayoutCreateInfo layoutCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .setLayoutCount = 0,
-        .pSetLayouts = nullptr,
+        .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = 0,
+        .setLayoutCount         = 0,
+        .pSetLayouts            = nullptr,
         .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr,
+        .pPushConstantRanges    = nullptr,
     };
     if (vkCreatePipelineLayout(_device, &layoutCreateInfo, nullptr, &_pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("Error: failed to create pipeline layout.");
     }
 
     VkGraphicsPipelineCreateInfo pipelineCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .stageCount = 2,
-        .pStages = shaderStageCreateInfos,
-        .pVertexInputState = &vertexInputStateCreateInfo,
-        .pInputAssemblyState = &inputAssemblyStateCreateInfo,
-        .pTessellationState = nullptr,
-        .pViewportState = &viewportStateCreateInfo,
-        .pRasterizationState = &rasterizationStateCreateInfo,
-        .pMultisampleState = &multisampleStateCreateInfo,
-        .pDepthStencilState = nullptr,
-        .pColorBlendState = &colorBlendStateCreateInfo,
-        .pDynamicState = &dynamicStateCreateInfo,
-        .layout = _pipelineLayout,
-        .renderPass = _renderPass,
-        .subpass = 0,
-        .basePipelineHandle = VK_NULL_HANDLE,
-        .basePipelineIndex = -1,
+        .sType                  = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext                  = nullptr,
+        .flags                  = 0,
+        .stageCount             = 2,
+        .pStages                = shaderStageCreateInfos,
+        .pVertexInputState      = &vertexInputStateCreateInfo,
+        .pInputAssemblyState    = &inputAssemblyStateCreateInfo,
+        .pTessellationState     = nullptr,
+        .pViewportState         = &viewportStateCreateInfo,
+        .pRasterizationState    = &rasterizationStateCreateInfo,
+        .pMultisampleState      = &multisampleStateCreateInfo,
+        .pDepthStencilState     = nullptr,
+        .pColorBlendState       = &colorBlendStateCreateInfo,
+        .pDynamicState          = &dynamicStateCreateInfo,
+        .layout                 = _pipelineLayout,
+        .renderPass             = _renderPass,
+        .subpass                = 0,
+        .basePipelineHandle     = VK_NULL_HANDLE,
+        .basePipelineIndex      = -1,
     };
     if (vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipelineCreateInfo, nullptr, &_graphicsPipeline) != VK_SUCCESS) {
         throw std::runtime_error("Error: failed to create graphics pipeline.");
@@ -772,7 +788,7 @@ static void _createGraphicsPipeline() {
 
 
 
-static void _createFramebuffers() {
+static void _createSwapchain() {
 
     VkSwapchainCreateInfoKHR swapchainCreateInfo{
         .sType                  = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
@@ -1137,6 +1153,9 @@ static void _draw() {
         throw std::runtime_error("Error: failed to present swapchain image.");
     }
 
+#ifdef FRAME_COUNTER_ENABLED
+    std::cout << _frameCounter++ << std::endl;
+#endif
     _currentFrame = (_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
 }

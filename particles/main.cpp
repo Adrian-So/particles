@@ -7,10 +7,8 @@
 
 
 #include <iostream>
-#include <string>
 
 #include "vulkan.h"
-#include "glm/glm.hpp"
 
 
 
@@ -20,7 +18,7 @@
 
 int main() {
 
-    std::cout << "Hello! This project will totally not fail (:\n";
+    std::cout << "Hello! This project will totally not fail (:\n\n";
 
     try {
 
