@@ -8,7 +8,7 @@
 
 #ifndef NDEBUG
 #define VALIDATION_LAYERS_ENABLED
-#define FRAME_COUNTER_ENABLED
+//#define FRAME_COUNTER_ENABLED
 #endif
 
 

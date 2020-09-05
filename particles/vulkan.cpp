@@ -3,6 +3,7 @@
 #include "GLFW/glfw3.h"
 
 #include "particle.h"
+#include "mvp.h"
 
 #include <iostream>
 #include <fstream>
@@ -39,6 +40,7 @@ static int _chooseDeviceProperties(const VkPhysicalDevice physicalDevice, Physic
 static int _chooseDeviceSurfaceCapabilities(const VkPhysicalDevice physicalDevice, PhysicalDeviceChoice& choice);
 
 static void _createRenderPass();
+
 static void _createGraphicsPipeline();
 static VkShaderModule _createShaderModule(const std::string& fileName);
 
@@ -138,9 +140,13 @@ void Vulkan::init() {
     _createSurface();
     _createDevice();
     _createRenderPass();
+    ModelViewProjection::setParameters(_physicalDevice, _device, _imageCount, _extent);
+    ModelViewProjection::createBuffers();
+    ModelViewProjection::createDescriptorSetLayout();
+    ModelViewProjection::createDescriptorPool();
+    ModelViewProjection::createDescriptorSet();
     _createGraphicsPipeline();
     _createSwapchain();
-    //createDescriptorSetLayout();
     _createCommandPool();
     _createParticlesBuffer();
     //createUniformBuffers();
@@ -747,8 +753,8 @@ static void _createGraphicsPipeline() {
         .sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         .pNext                  = nullptr,
         .flags                  = 0,
-        .setLayoutCount         = 0,
-        .pSetLayouts            = nullptr,
+        .setLayoutCount         = 1,
+        .pSetLayouts            = &ModelViewProjection::descriptorSetLayout,
         .pushConstantRangeCount = 0,
         .pPushConstantRanges    = nullptr,
     };
@@ -783,6 +789,36 @@ static void _createGraphicsPipeline() {
 
     vkDestroyShaderModule(_device, vertexShaderModule, nullptr);
     vkDestroyShaderModule(_device, fragmentShaderModule, nullptr);
+
+}
+
+
+
+static VkShaderModule _createShaderModule(const std::string& fileName) {
+
+    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Error: failed to open shader module.");
+    }
+    size_t fileSize = (size_t)file.tellg();
+    std::vector<char> buffer(fileSize);
+    file.seekg(0);
+    file.read(buffer.data(), fileSize);
+    file.close();
+
+    VkShaderModuleCreateInfo createInfo{
+        .sType      = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext      = nullptr,
+        .flags      = 0,
+        .codeSize   = fileSize,
+        .pCode      = reinterpret_cast<const uint32_t*>(buffer.data()),
+    };
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        throw std::runtime_error("Error: failed to create shader module.");
+    }
+
+    return shaderModule;
 
 }
 
@@ -868,36 +904,6 @@ static void _createSwapchain() {
 
 
 
-static VkShaderModule _createShaderModule(const std::string &fileName) {
-
-    std::ifstream file(fileName, std::ios::ate | std::ios::binary);
-    if (!file.is_open()) {
-        throw std::runtime_error("Error: failed to open shader module.");
-    }
-    size_t fileSize = (size_t)file.tellg();
-    std::vector<char> buffer(fileSize);
-    file.seekg(0);
-    file.read(buffer.data(), fileSize);
-    file.close();
-
-    VkShaderModuleCreateInfo createInfo{
-        .sType      = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .pNext      = nullptr,
-        .flags      = 0,
-        .codeSize   = fileSize,
-        .pCode      = reinterpret_cast<const uint32_t*>(buffer.data()),
-    };
-    VkShaderModule shaderModule;
-    if (vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-        throw std::runtime_error("Error: failed to create shader module.");
-    }
-
-    return shaderModule;
-
-}
-
-
-
 static void _createCommandPool() {
 
     VkCommandPoolCreateInfo createInfo{
@@ -936,9 +942,9 @@ static void _createParticlesBuffer() {
     vkFreeMemory(_device, stagingBufferMemory, nullptr);
 
 }
-        
-        
-        
+
+
+
 static void _createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
 
     VkBufferCreateInfo bufferInfo{
@@ -1065,6 +1071,7 @@ static void _createCommandBuffers() {
         renderPassBeginInfo.framebuffer = _swapchainFramebuffers[i];
         vkCmdBeginRenderPass(_commandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, _graphicsPipeline);
+            vkCmdBindDescriptorSets(_commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, _pipelineLayout, 0, 1, &ModelViewProjection::descriptorSets[i], 0, nullptr);
             vkCmdBindVertexBuffers(_commandBuffers[i], 0, 1, &_particlesBuffer, &offset);
             vkCmdDraw(_commandBuffers[i], static_cast<uint32_t>(particles.size()), 1, 0, 0);
         vkCmdEndRenderPass(_commandBuffers[i]);
@@ -1121,6 +1128,8 @@ static void _draw() {
         vkWaitForFences(_device, 1, &_imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
     }
     _imagesInFlight[imageIndex] = _inFlightFences[_currentFrame];
+
+    ModelViewProjection::update(imageIndex);
 
     VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submitInfo{

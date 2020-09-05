@@ -1,6 +1,6 @@
 #pragma once
 
-#include "vulkan.h"
+#include <vulkan/vulkan.hpp>
 #include "glm/glm.hpp"
 
 

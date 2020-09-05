@@ -2,10 +2,6 @@
 
 
 
-#define GLM_FORCE_RADIANS
-
-
-
 #include <iostream>
 
 #include "vulkan.h"
