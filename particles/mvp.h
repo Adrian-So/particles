@@ -7,19 +7,18 @@
 
 
 
+
+
+
+
 struct ModelViewProjection {
 
     alignas(16) glm::mat4 model;
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 
-    static void setParameters(const VkPhysicalDevice physicalDevice, const VkDevice device, const uint32_t num, const VkExtent2D extent);
-
-    static VkResult createBuffers();
-
-    static void createDescriptorSetLayout();
-    static void createDescriptorPool();
-    static void createDescriptorSet();
+    static void initialise();
+    static void cleanup();
 
     static void update(uint32_t imageNum);
 
@@ -28,12 +27,10 @@ struct ModelViewProjection {
 
 private:
 
-    static uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-
-    static VkPhysicalDevice _physicalDevice;
-    static VkDevice _device;
-    static uint32_t _num;
-    static VkExtent2D _extent;
+    static void _createBuffers();
+    static void _createDescriptorSetLayout();
+    static void _createDescriptorPool();
+    static void _createDescriptorSet();
 
     static std::vector<VkBuffer> _buffers;
     static std::vector<VkDeviceMemory> _deviceMemories;
