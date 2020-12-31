@@ -418,15 +418,15 @@ void _createSwapchain() {
 
     GraphicsPipeline::swapchainFramebuffers.resize(Vulkan::imageCount);
     VkFramebufferCreateInfo framebufferCreateInfo{
-        .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .renderPass = GraphicsPipeline::renderPass,
+        .sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+        .pNext           = nullptr,
+        .flags           = 0,
+        .renderPass      = GraphicsPipeline::renderPass,
         .attachmentCount = 1,
-        .pAttachments = nullptr,
-        .width = Vulkan::extent.width,
-        .height = Vulkan::extent.height,
-        .layers = 1,
+        .pAttachments    = nullptr,
+        .width           = Vulkan::extent.width,
+        .height          = Vulkan::extent.height,
+        .layers          = 1,
     };
     for (size_t i = 0; i < Vulkan::imageCount; i++) {
         framebufferCreateInfo.pAttachments = &GraphicsPipeline::swapchainImageViews[i];
@@ -444,10 +444,10 @@ void _createCommandBuffers() {
     GraphicsPipeline::commandBuffers.resize(Vulkan::imageCount);
 
     VkCommandBufferAllocateInfo commandBufferAllocateInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .pNext = nullptr,
-        .commandPool = Vulkan::commandPool,
-        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext              = nullptr,
+        .commandPool        = Vulkan::commandPool,
+        .level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = Vulkan::imageCount,
     };
     if (vkAllocateCommandBuffers(Vulkan::device, &commandBufferAllocateInfo, GraphicsPipeline::commandBuffers.data()) != VK_SUCCESS) {
@@ -455,23 +455,23 @@ void _createCommandBuffers() {
     }
 
     VkCommandBufferBeginInfo commandBufferBeginInfo{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .pNext = nullptr,
-        .flags = 0,
+        .sType            = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .pNext            = nullptr,
+        .flags            = 0,
         .pInheritanceInfo = nullptr,
     };
 
     VkClearValue clearColour = { 0.0f, 0.0f, 0.0f, 1.0f };
     VkRenderPassBeginInfo renderPassBeginInfo{
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .pNext = nullptr,
-        .renderPass = GraphicsPipeline::renderPass,
-        .framebuffer = VK_NULL_HANDLE,
-        .renderArea = {
-            .offset = { 0, 0 },
-            .extent = Vulkan::extent },
+        .sType           = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .pNext           = nullptr,
+        .renderPass      = GraphicsPipeline::renderPass,
+        .framebuffer     = VK_NULL_HANDLE,
+        .renderArea      = {
+            .offset          = { 0, 0 },
+            .extent          = Vulkan::extent },
         .clearValueCount = 1,
-        .pClearValues = &clearColour,
+        .pClearValues    = &clearColour,
     };
 
     VkDeviceSize offset = 0;

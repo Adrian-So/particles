@@ -14,7 +14,8 @@
 VkDescriptorSetLayout ModelViewProjection::descriptorSetLayout = VK_NULL_HANDLE;
 std::vector<VkDescriptorSet> ModelViewProjection::descriptorSets(1);
 std::vector<VkBuffer> ModelViewProjection::_buffers(1);
-std::vector<VkDeviceMemory> ModelViewProjection::_deviceMemories(1);
+VkDeviceMemory ModelViewProjection::_deviceMemory = VK_NULL_HANDLE;
+VkDeviceSize ModelViewProjection::_offset = 0;
 VkDescriptorPool ModelViewProjection::_descriptorPool = VK_NULL_HANDLE;
 
 
@@ -35,10 +36,10 @@ void ModelViewProjection::initialise() {
 void ModelViewProjection::cleanup() {
     vkDestroyDescriptorPool(Vulkan::device, _descriptorPool, nullptr);
     vkDestroyDescriptorSetLayout(Vulkan::device, descriptorSetLayout, nullptr);
-    for (int i = 0; i < Vulkan::imageCount; i++) {
+    for (uint32_t i = 0; i < Vulkan::imageCount; i++) {
         vkDestroyBuffer(Vulkan::device, _buffers[i], nullptr);
-        vkFreeMemory(Vulkan::device, _deviceMemories[i], nullptr);
     }
+    vkFreeMemory(Vulkan::device, _deviceMemory, nullptr);
 }
 
 
@@ -51,15 +52,16 @@ void ModelViewProjection::update(uint32_t imageNum) {
     float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
     ModelViewProjection matrices;
-    matrices.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    //matrices.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    matrices.model = glm::mat4(1.0f);
     matrices.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     matrices.proj = glm::perspective(glm::radians(45.0f), Vulkan::extent.width / (float)Vulkan::extent.height, 0.1f, 10.0f);
     matrices.proj[1][1] *= -1;
 
     void* data;
-    vkMapMemory(Vulkan::device, _deviceMemories[imageNum], 0, sizeof(ModelViewProjection), 0, &data);
+    vkMapMemory(Vulkan::device, _deviceMemory, _offset * imageNum, sizeof(ModelViewProjection), 0, &data);
     memcpy(data, &matrices, sizeof(ModelViewProjection));
-    vkUnmapMemory(Vulkan::device, _deviceMemories[imageNum]);
+    vkUnmapMemory(Vulkan::device, _deviceMemory);
 
 }
 
@@ -75,7 +77,6 @@ void ModelViewProjection::_createBuffers() {
     VkDeviceSize bufferSize = sizeof(ModelViewProjection);
 
     _buffers.resize(Vulkan::imageCount);
-    _deviceMemories.resize(Vulkan::imageCount);
 
     VkBufferCreateInfo bufferCreateInfo{
         .sType                  = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -87,30 +88,29 @@ void ModelViewProjection::_createBuffers() {
         .queueFamilyIndexCount  = 0,
         .pQueueFamilyIndices    = nullptr,
     };
-
-    VkMemoryAllocateInfo memoryAllocateInfo{
-        .sType              = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .pNext              = nullptr,
-        .allocationSize     = 0,
-        .memoryTypeIndex    = 0,
-    };
-
     for (uint32_t i = 0; i < Vulkan::imageCount; i++) {
-
         if (vkCreateBuffer(Vulkan::device, &bufferCreateInfo, nullptr, &_buffers[i]) != VK_SUCCESS) {
             throw std::runtime_error("Error: failed to create model view projection buffer.");
         }
+    }
 
-        VkMemoryRequirements memoryRequirements;
-        vkGetBufferMemoryRequirements(Vulkan::device, _buffers[i], &memoryRequirements);
-        memoryAllocateInfo.allocationSize = memoryRequirements.size;
-        memoryAllocateInfo.memoryTypeIndex = Vulkan::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        if (vkAllocateMemory(Vulkan::device, &memoryAllocateInfo, nullptr, &_deviceMemories[i]) != VK_SUCCESS) {
-            throw std::runtime_error("Error: failed to allocate model view projection memory.");
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(Vulkan::device, _buffers[0], &memoryRequirements);
+    _offset = memoryRequirements.size;
+    VkMemoryAllocateInfo memoryAllocateInfo{
+        .sType              = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext              = nullptr,
+        .allocationSize     = _offset * Vulkan::imageCount,
+        .memoryTypeIndex    = Vulkan::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT),
+    };
+    if (vkAllocateMemory(Vulkan::device, &memoryAllocateInfo, nullptr, &_deviceMemory) != VK_SUCCESS) {
+        throw std::runtime_error("Error: failed to allocate model view projection memory.");
+    }
+
+    for (uint32_t i = 0; i < Vulkan::imageCount; i++) {
+        if (vkBindBufferMemory(Vulkan::device, _buffers[i], _deviceMemory, _offset * i)) {
+            throw std::runtime_error("Error: failed to bind view projection buffer to memory.");
         }
-
-        vkBindBufferMemory(Vulkan::device, _buffers[i], _deviceMemories[i], 0);
-
     }
 
 }

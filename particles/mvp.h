@@ -33,7 +33,8 @@ private:
     static void _createDescriptorSet();
 
     static std::vector<VkBuffer> _buffers;
-    static std::vector<VkDeviceMemory> _deviceMemories;
+    static VkDeviceMemory _deviceMemory;
+    static VkDeviceSize _offset;
 
     static VkDescriptorPool _descriptorPool;
 

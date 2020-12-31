@@ -1,0 +1,18 @@
+#version 450
+
+struct Particle {
+    vec3 r;
+    vec3 v;
+    vec3 colour;
+};
+layout(binding = 0) buffer Particles {
+    Particle p[];
+} particles;
+
+
+
+void main() {
+
+    particles.p[gl_GlobalInvocationID.x].r *= 0.9;
+
+}
